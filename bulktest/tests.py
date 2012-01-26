@@ -1,5 +1,5 @@
 from django.test import TestCase
-from bulktest.models import TestModelA
+from bulktest.models import TestModelA, TestModelPreSave
 from djangobulk.bulk import insert_many, update_many, insert_or_update_many
 
 
@@ -185,3 +185,13 @@ class InsertUpdateTest(TestCase):
         insert_or_update_many(TestModelA, set1, keys=['b'])
         self.assertEqual(2, TestModelA.objects.all().count())
         self.assertEqual(3, TestModelA.objects.get(a="Test2").c)
+
+
+class TestPreSave(TestCase):
+    """Test the presave() method support."""
+
+    def test_presave_called(self):
+        m = TestModelPreSave()
+        m.a = 3
+        insert_many(TestModelPreSave, [m])
+        self.assertEquals(m.a, 5)

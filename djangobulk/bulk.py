@@ -15,6 +15,8 @@ def _model_fields(model):
 
 
 def _prep_values(fields, obj, con):
+    if hasattr(obj, 'presave') and callable(obj.presave):
+        obj.presave()
     return tuple(f.get_db_prep_save(f.pre_save(obj, True), connection=con)
                  for f in fields)
 
