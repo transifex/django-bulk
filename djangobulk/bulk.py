@@ -38,7 +38,7 @@ def _insert_many(model, objects, using="default"):
     con.cursor().executemany(sql, parameters)
 
 
-def insert_many(*args, **kwargs):
+def insert_many(model, objects, using="default"):
     '''
     Bulk insert list of Django objects. Objects must be of the same
     Django model.
@@ -51,8 +51,8 @@ def insert_many(*args, **kwargs):
     :param using: Database to use.
 
     '''
-    _insert_many(*args, **kwargs)
-    transaction.commit_unless_managed()
+    _insert_many(model, objects, using)
+    transaction.commit_unless_managed(using)
 
 
 def _update_many(model, objects, keys=None, using="default"):
@@ -85,7 +85,7 @@ def _update_many(model, objects, keys=None, using="default"):
     con.cursor().executemany(sql, parameters)
 
 
-def update_many(*args, **kwargs):
+def update_many(model, objects, keys=None, using="default"):
     '''
     Bulk update list of Django objects. Objects must be of the same
     Django model.
@@ -99,8 +99,8 @@ def update_many(*args, **kwargs):
     :param using: Database to use.
 
     '''
-    _update_many(*args, **kwargs)
-    transaction.commit_unless_managed()
+    _update_many(model, objects, keys, using)
+    transaction.commit_unless_managed(using)
 
 
 def _filter_objects(con, objects, key_fields):
@@ -168,4 +168,4 @@ def insert_or_update_many(model, objects, keys=None, using="default"):
     filtered_objects = _filter_objects(con, insert_objects, key_fields)
 
     _insert_many(model, filtered_objects, using=using)
-    transaction.commit_unless_managed()
+    transaction.commit_unless_managed(using)
