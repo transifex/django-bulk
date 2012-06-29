@@ -116,7 +116,7 @@ def _filter_objects(con, objects, key_fields):
         yield o
 
 
-def insert_or_update_many(model, objects, keys=None, using="default", 
+def insert_or_update_many(model, objects, keys=None, using="default",
     skip_update=False):
     '''
     Bulk insert or update a list of Django objects. This works by
@@ -172,3 +172,4 @@ def insert_or_update_many(model, objects, keys=None, using="default",
 
     _insert_many(model, filtered_objects, using=using)
     transaction.commit_unless_managed(using)
+    return len(insert_objects)
