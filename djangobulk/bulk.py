@@ -133,7 +133,7 @@ def insert_or_update_many(model, objects, keys=None, using="default",
 
     '''
     if not objects:
-        return
+        return 0
 
     keys = keys or [model._meta.pk.name]
     con = connections[using]
