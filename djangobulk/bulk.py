@@ -21,7 +21,12 @@ def _prep_values(fields, obj, con):
                  for f in fields)
 
 
-def _insert_many(model, objects, using="default"):
+def _build_rows(fields, parameters):
+    fields_name = [f.name for f in fields]
+    return [dict(zip(fields_name, p)) for p in parameters]
+
+
+def _insert_many(model, objects, using="default", skip_result=True):
     if not objects:
         return
 
@@ -36,6 +41,11 @@ def _insert_many(model, objects, using="default"):
 
     sql = "INSERT INTO %s (%s) VALUES (%s)" % (table, col_names, placeholders)
     con.cursor().executemany(sql, parameters)
+
+    if not skip_result:
+        return _build_rows(fields, parameters)
+
+    return []
 
 
 def insert_many(model, objects, using="default"):
@@ -55,7 +65,7 @@ def insert_many(model, objects, using="default"):
     transaction.commit_unless_managed(using)
 
 
-def _update_many(model, objects, keys=None, using="default"):
+def _update_many(model, objects, keys=None, using="default", skip_result=True):
     if not objects:
         return
 
@@ -83,6 +93,11 @@ def _update_many(model, objects, keys=None, using="default"):
                               for f in key_fields)
     sql = "UPDATE %s SET %s WHERE %s" % (table, assignments, where_keys)
     con.cursor().executemany(sql, parameters)
+
+    if not skip_result:
+        return _build_rows(param_fields, parameters)
+
+    return []
 
 
 def update_many(model, objects, keys=None, using="default"):
@@ -159,10 +174,12 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     cursor.execute(sql, parameters)
     existing = set(cursor.fetchall())
 
+    updated_rows = []
     if not skip_update:
         # Find the objects that need to be updated
         update_objects = [o for (o, k) in object_keys if k in existing]
-        _update_many(model, update_objects, keys=keys, using=using)
+        updated_rows = _update_many(model, update_objects, keys=keys,
+            using=using, skip_result=False)
 
     # Find the objects that need to be inserted.
     insert_objects = [o for (o, k) in object_keys if k not in existing]
@@ -170,6 +187,7 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     # Filter out any duplicates in the insertion
     filtered_objects = _filter_objects(con, insert_objects, key_fields)
 
-    _insert_many(model, filtered_objects, using=using)
+    inserted_rows = _insert_many(model, filtered_objects, using=using,
+        skip_result=False)
     transaction.commit_unless_managed(using)
-    return len(insert_objects)
+    return (inserted_rows, updated_rows)

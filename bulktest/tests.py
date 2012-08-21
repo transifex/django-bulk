@@ -27,6 +27,10 @@ class InsertTest(TestCase):
         self.assertEqual(a.b, b.b)
         self.assertEqual(a.c, b.c)
 
+        # Test Returned data
+        self.assertTrue(isinstance(entries[0]['b'], int))
+        self.assertEqual(entries[0]['a'], 'Test')
+
 
 class UpdateTest(TestCase):
     def test_basic_update(self):
@@ -198,6 +202,18 @@ class InsertUpdateTest(TestCase):
         set2 = [TestModelA(a="Test", b=i, c=2) for i in range(500, 2000)]
         insert_or_update_many(TestModelA, set2, keys=['b'])
         self.assertEqual(2000, TestModelA.objects.all().count())
+
+    def test_returned_results_insert_update(self):
+        # Expected to fail in SQLite (too many variables)
+        set1 = [TestModelA(a="Test", b=i, c=1) for i in range(1000)]
+        insert_many(TestModelA, set1)
+
+        set2 = [TestModelA(a="Test", b=i, c=2) for i in range(500, 2000)]
+        inserted, updated = insert_or_update_many(TestModelA, set2, keys=['b'])
+        self.assertEqual(1000, len(inserted))
+        self.assertEqual(500, len(updated))
+        self.assertTrue(isinstance(inserted[0], dict))
+        self.assertTrue(isinstance(updated[0], dict))
 
     def test_duplicate_insert_update(self):
         set1 = [
