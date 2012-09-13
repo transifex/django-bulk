@@ -18,7 +18,7 @@ class InsertTest(TestCase):
 
     def test_multi_insert(self):
         n = TestModelA(a="Test", b=1, c=2)
-        insert_many(TestModelA, [n, n, n])
+        entries = insert_many(TestModelA, [n, n, n], skip_result=False)
         self.assertEqual(3, TestModelA.objects.all().count())
 
         a = TestModelA.objects.all()[0]

@@ -48,7 +48,7 @@ def _insert_many(model, objects, using="default", skip_result=True):
     return []
 
 
-def insert_many(model, objects, using="default"):
+def insert_many(model, objects, using="default", skip_result=True):
     '''
     Bulk insert list of Django objects. Objects must be of the same
     Django model.
@@ -61,8 +61,9 @@ def insert_many(model, objects, using="default"):
     :param using: Database to use.
 
     '''
-    _insert_many(model, objects, using)
+    inserted_rows = _insert_many(model, objects, using, skip_result)
     transaction.commit_unless_managed(using)
+    return inserted_rows
 
 
 def _update_many(model, objects, keys=None, using="default", skip_result=True):
