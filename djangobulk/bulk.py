@@ -17,9 +17,15 @@ def _model_fields(model):
 def _prep_values(fields, obj, con):
     if hasattr(obj, 'presave') and callable(obj.presave):
         obj.presave()
-    return tuple(f.get_db_prep_save(f.pre_save(obj, True), connection=con)
-                 for f in fields)
 
+    values = []
+    for f in fields:
+        field_type = f.get_internal_type()
+        if (field_type == 'DateTimeField' or field_type == 'DateField'):
+            values.append(f.pre_save(obj, True))
+        else:
+            values.append(f.get_db_prep_save(f.pre_save(obj, True)))
+    return tuple(values)
 
 def _build_rows(fields, parameters):
     fields_name = [f.name for f in fields]
