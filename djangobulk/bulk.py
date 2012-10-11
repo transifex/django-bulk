@@ -21,7 +21,7 @@ def _prep_values(fields, obj, con):
     values = []
     for f in fields:
         field_type = f.get_internal_type()
-        if (field_type == 'DateTimeField' or field_type == 'DateField'):
+        if field_type in ('DateTimeField', 'DateField', 'UUIDField'):
             values.append(f.pre_save(obj, True))
         else:
             values.append(f.get_db_prep_save(f.pre_save(obj, True)))
