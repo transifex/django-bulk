@@ -14,7 +14,7 @@ def _model_fields(model):
             if not isinstance(f, models.AutoField)]
 
 
-def _prep_values(fields, obj, con):
+def _prep_values(fields, obj, con, add):
     if hasattr(obj, 'presave') and callable(obj.presave):
         obj.presave()
 
@@ -22,9 +22,9 @@ def _prep_values(fields, obj, con):
     for f in fields:
         field_type = f.get_internal_type()
         if field_type in ('DateTimeField', 'DateField', 'UUIDField'):
-            values.append(f.pre_save(obj, True))
+            values.append(f.pre_save(obj, add))
         else:
-            values.append(f.get_db_prep_save(f.pre_save(obj, True)))
+            values.append(f.get_db_prep_save(f.pre_save(obj, add)))
     return tuple(values)
 
 def _build_rows(fields, parameters):
@@ -39,7 +39,7 @@ def _insert_many(model, objects, using="default", skip_result=True):
     con = connections[using]
 
     fields = _model_fields(model)
-    parameters = [_prep_values(fields, o, con) for o in objects]
+    parameters = [_prep_values(fields, o, con, True) for o in objects]
 
     table = model._meta.db_table
     col_names = ",".join(con.ops.quote_name(f.column) for f in fields)
@@ -90,7 +90,7 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True):
 
     # Combine the fields for the parameter list
     param_fields = value_fields + key_fields
-    parameters = [_prep_values(param_fields, o, con) for o in objects]
+    parameters = [_prep_values(param_fields, o, con, False) for o in objects]
 
     # Build the SQL
     table = model._meta.db_table
@@ -131,7 +131,7 @@ def _filter_objects(con, objects, key_fields):
 
     # reverse = latest wins
     for o in reversed(objects):
-        okeys = _prep_values(key_fields, o, con)
+        okeys = _prep_values(key_fields, o, con, False)
         if okeys in keyset:
             continue
         keyset.add(okeys)
@@ -165,7 +165,7 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     key_fields = [f for f in model._meta.fields if f.name in keys]
     assert key_fields, "Empty key fields"
 
-    object_keys = [(o, _prep_values(key_fields, o, con)) for o in objects]
+    object_keys = [(o, _prep_values(key_fields, o, con, False)) for o in objects]
     parameters = [i for (_, k) in object_keys for i in k]
 
     table = model._meta.db_table

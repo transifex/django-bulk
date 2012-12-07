@@ -14,3 +14,9 @@ class TestModelPreSave(models.Model):
 
     def presave(self):
         self.a = 5
+
+
+class TestModelAutoCreated(models.Model):
+    a = models.CharField(max_length=200)
+    b = models.IntegerField()
+    created = models.DateTimeField(auto_now_add=True)

@@ -1,5 +1,5 @@
 from django.test import TestCase
-from bulktest.models import TestModelA, TestModelPreSave
+from bulktest.models import TestModelA, TestModelPreSave, TestModelAutoCreated
 from djangobulk.bulk import insert_many, update_many, insert_or_update_many
 
 
@@ -30,6 +30,17 @@ class InsertTest(TestCase):
         # Test Returned data
         self.assertTrue(isinstance(entries[0]['b'], int))
         self.assertEqual(entries[0]['a'], 'Test')
+
+    def test_insert_with_auto_now_add(self):
+        n = TestModelAutoCreated(a="Test", b=1)
+
+        insert_many(TestModelAutoCreated, [n])
+        self.assertEqual(1, TestModelAutoCreated.objects.all().count())
+
+        n = TestModelAutoCreated.objects.all()[0]
+        self.assertEqual(n.a, "Test")
+        self.assertEqual(n.b, 1)
+        self.assertTrue(n.created)
 
 
 class UpdateTest(TestCase):
@@ -122,6 +133,27 @@ class UpdateTest(TestCase):
 
         self.assertEqual(3, TestModelA.objects.get(a="Test2", b=1).c)
         self.assertEqual(4, TestModelA.objects.get(a="Test1", b=2).c)
+
+    def test_update_with_auto_now_add(self):
+        """Do not update created field on update."""
+        n = TestModelAutoCreated(a="Test", b=1)
+        n.save()
+
+        n = TestModelAutoCreated.objects.all()[0]
+        self.assertEqual(n.a, "Test")
+        self.assertEqual(n.b, 1)
+        self.assertTrue(n.created)
+
+        n.b = 2
+        created = n.created
+
+        update_many(TestModelAutoCreated, [n], keys=['a'])
+        self.assertEqual(1, TestModelAutoCreated.objects.all().count())
+
+        n = TestModelAutoCreated.objects.all()[0]
+        self.assertEqual(n.a, "Test")
+        self.assertEqual(n.b, 2)
+        self.assertEqual(created, n.created)
 
 
 class InsertUpdateTest(TestCase):
