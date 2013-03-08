@@ -24,7 +24,7 @@ def _prep_values(fields, obj, con, add):
         if field_type in ('DateTimeField', 'DateField', 'UUIDField'):
             values.append(f.pre_save(obj, add))
         else:
-            values.append(f.get_db_prep_save(f.pre_save(obj, add)))
+            values.append(f.get_db_prep_save(f.pre_save(obj, add), connection=con))
     return tuple(values)
 
 def _build_rows(fields, parameters):
