@@ -155,6 +155,25 @@ class UpdateTest(TestCase):
         self.assertEqual(n.b, 2)
         self.assertEqual(created, n.created)
 
+    def test_update_espefic_field(self):
+        """Only update b field."""
+        n = TestModelA(a="Test", b=1, c=1)
+        n.save()
+
+        n = TestModelA.objects.all()[0]
+        self.assertEqual(n.a, "Test")
+        self.assertEqual(n.b, 1)
+        self.assertEqual(n.c, 1)
+
+        n.b = 2
+        n.c = 2
+        update_many(TestModelA, [n], keys=['a'], update_fields=['b'])
+
+        n = TestModelA.objects.all()[0]
+        self.assertEqual(n.a, "Test")
+        self.assertEqual(n.b, 2)
+        self.assertEqual(n.c, 1)
+
 
 class InsertUpdateTest(TestCase):
     def test_basic_insert_update(self):

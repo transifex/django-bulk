@@ -9,9 +9,14 @@ from itertools import repeat
 from django.db import models, connections, transaction
 
 
-def _model_fields(model):
-    return [f for f in model._meta.fields
-            if not isinstance(f, models.AutoField)]
+def _model_fields(model, field_names=[]):
+    fields = []
+    for f in model._meta.fields:
+        if (isinstance(f, models.AutoField) or
+            (field_names and f.name not in field_names)):
+                continue
+        fields.append(f)
+    return fields
 
 
 def _prep_values(fields, obj, con, add):
@@ -72,7 +77,9 @@ def insert_many(model, objects, using="default", skip_result=True):
     return inserted_rows
 
 
-def _update_many(model, objects, keys=None, using="default", skip_result=True):
+def _update_many(model, objects, keys=None, using="default", skip_result=True,
+        update_fields=[]):
+
     if not objects:
         return
 
@@ -84,7 +91,7 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True):
     # Split the fields into the fields we want to update and the fields we want
     # to update by in the WHERE clause.
     key_fields = [f for f in model._meta.fields if f.name in keys]
-    value_fields = [f for f in _model_fields(model) if f.name not in keys]
+    value_fields = [f for f in _model_fields(model, update_fields) if f.name not in keys]
 
     assert key_fields, "Empty key fields"
 
@@ -107,7 +114,7 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True):
     return []
 
 
-def update_many(model, objects, keys=None, using="default"):
+def update_many(model, objects, keys=None, using="default", update_fields=[]):
     '''
     Bulk update list of Django objects. Objects must be of the same
     Django model.
@@ -119,9 +126,11 @@ def update_many(model, objects, keys=None, using="default"):
     :param objects: List of objects of class `model`.
     :param keys: A list of field names to update on.
     :param using: Database to use.
+    :param update_fields: A list of fields up be updated. If empty, all fields
+        of model are updated.
 
     '''
-    _update_many(model, objects, keys, using)
+    _update_many(model, objects, keys, using, update_fields=update_fields)
     transaction.commit_unless_managed(using)
 
 
@@ -139,7 +148,7 @@ def _filter_objects(con, objects, key_fields):
 
 
 def insert_or_update_many(model, objects, keys=None, using="default",
-    skip_update=False):
+    skip_update=False, update_fields=[]):
     '''
     Bulk insert or update a list of Django objects. This works by
     first selecting each object's keys from the database. If an
@@ -152,6 +161,8 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     :param keys: A list of field names to update on.
     :param using: Database to use.
     :param skip_update: Flag to insert only non-existing objects.
+    :param update_fields: A list of fields up be updated. If empty, all fields
+        of model are updated.
 
     '''
     if not objects:
@@ -185,8 +196,9 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     if not skip_update:
         # Find the objects that need to be updated
         update_objects = [o for (o, k) in object_keys if k in existing]
+
         updated_rows = _update_many(model, update_objects, keys=keys,
-            using=using, skip_result=False)
+            using=using, skip_result=False, update_fields=update_fields)
 
     # Find the objects that need to be inserted.
     insert_objects = [o for (o, k) in object_keys if k not in existing]
