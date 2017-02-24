@@ -5,6 +5,7 @@ Does not attempt to cover all corner cases and related models.
 Originally from http://people.iola.dk/olau/python/bulkops.py
 
 '''
+from functools import wraps
 from itertools import repeat
 from django.db import models, connections, transaction
 
@@ -13,8 +14,8 @@ def _model_fields(model, field_names=[]):
     fields = []
     for f in model._meta.fields:
         if (isinstance(f, models.AutoField) or
-            (field_names and f.name not in field_names)):
-                continue
+                (field_names and f.name not in field_names)):
+            continue
         fields.append(f)
     return fields
 
@@ -29,12 +30,28 @@ def _prep_values(fields, obj, con, add):
         if field_type in ('DateTimeField', 'DateField', 'UUIDField'):
             values.append(f.pre_save(obj, add))
         else:
-            values.append(f.get_db_prep_save(f.pre_save(obj, add), connection=con))
+            values.append(f.get_db_prep_save(f.pre_save(obj, add),
+                                             connection=con))
     return tuple(values)
+
 
 def _build_rows(fields, parameters):
     fields_name = [f.name for f in fields]
     return [dict(zip(fields_name, p)) for p in parameters]
+
+
+def transaction_management(func):
+    @wraps(func)
+    def _decorator(*args, **kwargs):
+        if hasattr(transaction, "atomic"):
+            with transaction.atomic(using=kwargs.get('using')):
+                return func(*args, **kwargs)
+        else:
+            # Django < 1.6
+            result = func(*args, **kwargs)
+            transaction.commit_unless_managed(using=kwargs.get('using'))
+            return result
+    return _decorator
 
 
 def _insert_many(model, objects, using="default", skip_result=True):
@@ -59,6 +76,7 @@ def _insert_many(model, objects, using="default", skip_result=True):
     return []
 
 
+@transaction_management
 def insert_many(model, objects, using="default", skip_result=True):
     '''
     Bulk insert list of Django objects. Objects must be of the same
@@ -72,13 +90,12 @@ def insert_many(model, objects, using="default", skip_result=True):
     :param using: Database to use.
 
     '''
-    inserted_rows = _insert_many(model, objects, using, skip_result)
-    transaction.commit_unless_managed(using)
-    return inserted_rows
+
+    return _insert_many(model, objects, using, skip_result)
 
 
 def _update_many(model, objects, keys=None, using="default", skip_result=True,
-        update_fields=[]):
+                 update_fields=[]):
 
     if not objects:
         return
@@ -114,6 +131,7 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True,
     return []
 
 
+@transaction_management
 def update_many(model, objects, keys=None, using="default", update_fields=[]):
     '''
     Bulk update list of Django objects. Objects must be of the same
@@ -130,8 +148,8 @@ def update_many(model, objects, keys=None, using="default", update_fields=[]):
         of model are updated.
 
     '''
+
     _update_many(model, objects, keys, using, update_fields=update_fields)
-    transaction.commit_unless_managed(using)
 
 
 def _filter_objects(con, objects, key_fields):
@@ -147,8 +165,9 @@ def _filter_objects(con, objects, key_fields):
         yield o
 
 
+@transaction_management
 def insert_or_update_many(model, objects, keys=None, using="default",
-    skip_update=False, update_fields=[]):
+                          skip_update=False, update_fields=[]):
     '''
     Bulk insert or update a list of Django objects. This works by
     first selecting each object's keys from the database. If an
@@ -165,6 +184,7 @@ def insert_or_update_many(model, objects, keys=None, using="default",
         of model are updated.
 
     '''
+
     if not objects:
         return ([], [])
 
@@ -197,8 +217,10 @@ def insert_or_update_many(model, objects, keys=None, using="default",
         # Find the objects that need to be updated
         update_objects = [o for (o, k) in object_keys if k in existing]
 
-        updated_rows = _update_many(model, update_objects, keys=keys,
-            using=using, skip_result=False, update_fields=update_fields)
+        updated_rows = _update_many(
+            model, update_objects, keys=keys, using=using, skip_result=False,
+            update_fields=update_fields
+        )
 
     # Find the objects that need to be inserted.
     insert_objects = [o for (o, k) in object_keys if k not in existing]
@@ -207,6 +229,6 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     filtered_objects = _filter_objects(con, insert_objects, key_fields)
 
     inserted_rows = _insert_many(model, filtered_objects, using=using,
-        skip_result=False)
-    transaction.commit_unless_managed(using)
+                                 skip_result=False)
+
     return (inserted_rows, updated_rows)
