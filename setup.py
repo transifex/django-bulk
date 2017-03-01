@@ -6,5 +6,5 @@ setup(
     author='Kevin Mahoney',
     author_email='kevin.mahoney@maplecroft.com',
     packages=['djangobulk'],
-    install_requires=['Django >= 1.5'],
+    install_requires=['Django >= 1.5', 'psycopg2'],
     )
