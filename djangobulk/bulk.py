@@ -28,7 +28,19 @@ def _prep_values(fields, obj, con, add):
     for f in fields:
         field_type = f.get_internal_type()
         if field_type in ('DateTimeField', 'DateField', 'UUIDField'):
-            values.append(f.pre_save(obj, add))
+            v = f.pre_save(obj, add)
+            # FIXME: This is necessary for when a DateTimeField is present in
+            # a `keys` parameter of `insert_or_update_many`. Newer versions of
+            # Django make the fields tz aware. The problem here is that
+            # comparing two `datetime` objects with the *same* value but one
+            # being tz aware the other not, actually fails.
+            # It looks like postgresql stores things in UTC by default, so
+            # the code below is dropping the tz info at the Django side.
+            # This is not an elegant solution and also relies on a big
+            # assumption which may not be true (PostgreSQL always in UTC).
+            if field_type == 'DateTimeField':
+                v = v.replace(tzinfo=None)
+            values.append(v)
         else:
             values.append(f.get_db_prep_save(f.pre_save(obj, add),
                                              connection=con))
