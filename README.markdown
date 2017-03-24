@@ -4,6 +4,10 @@ Based on a [snippet](http://people.iola.dk/olau/python/bulkops.py) by Ole Laurse
 
 Bulk insertion, update and insert/update. Does not attempt to handle many-to-many, etc. just flat data for now.
 
+## Running tests
+
+    $ python manage.py test
+
 
 ## License (MIT)
 

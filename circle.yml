@@ -1,0 +1,17 @@
+machine:
+  environment:
+    TOX_PY27: '2.7.12'
+    TOX_PY35: '3.5.2'
+
+dependencies:
+  override:
+    - pip install -U pip
+    - pip install -U tox
+    - pip install -U tox-pyenv
+    - pyenv local $TOX_PY27 $TOX_PY35
+
+test:
+  pre:
+    - bash circle_setup.sh
+  override:
+    - tox --recreate

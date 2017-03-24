@@ -5,16 +5,28 @@ Does not attempt to cover all corner cases and related models.
 Originally from http://people.iola.dk/olau/python/bulkops.py
 
 '''
+from functools import wraps
 from itertools import repeat
 from django.db import models, connections, transaction
 
 
-def _model_fields(model, field_names=[]):
+def _model_fields(model, field_names=None):
+    """Takes a model class and returns a list of fields that should be
+        inserted/updated.
+
+    :param model: A model class.
+    :param field_names: A list of field names that should be returned if they
+        match field in the model. If none all fields of the models that should
+        be update or inserted are returned.
+    :returns: A list of fields that should be updated/inserted.
+    """
     fields = []
+    field_names = field_names if field_names is not None else []
     for f in model._meta.fields:
-        if (isinstance(f, models.AutoField) or
-            (field_names and f.name not in field_names)):
-                continue
+        is_autofield = isinstance(f, models.AutoField)
+        should_skip_field = field_names and f.name not in field_names
+        if is_autofield or should_skip_field:
+            continue
         fields.append(f)
     return fields
 
@@ -27,14 +39,42 @@ def _prep_values(fields, obj, con, add):
     for f in fields:
         field_type = f.get_internal_type()
         if field_type in ('DateTimeField', 'DateField', 'UUIDField'):
-            values.append(f.pre_save(obj, add))
+            v = f.pre_save(obj, add)
+            # FIXME: This is necessary for when a DateTimeField is present in
+            # a `keys` parameter of `insert_or_update_many`. Newer versions of
+            # Django make the fields tz aware. The problem here is that
+            # comparing two `datetime` objects with the *same* value but one
+            # being tz aware the other not, actually fails.
+            # It looks like postgresql stores things in UTC by default, so
+            # the code below is dropping the tz info at the Django side.
+            # This is not an elegant solution and also relies on a big
+            # assumption which may not be true (PostgreSQL always in UTC).
+            if field_type == 'DateTimeField':
+                v = v.replace(tzinfo=None)
+            values.append(v)
         else:
-            values.append(f.get_db_prep_save(f.pre_save(obj, add), connection=con))
+            values.append(f.get_db_prep_save(f.pre_save(obj, add),
+                                             connection=con))
     return tuple(values)
+
 
 def _build_rows(fields, parameters):
     fields_name = [f.name for f in fields]
     return [dict(zip(fields_name, p)) for p in parameters]
+
+
+def transaction_management(func):
+    @wraps(func)
+    def _decorator(*args, **kwargs):
+        if hasattr(transaction, "atomic"):
+            with transaction.atomic(using=kwargs.get('using')):
+                return func(*args, **kwargs)
+        else:
+            # Django < 1.6
+            result = func(*args, **kwargs)
+            transaction.commit_unless_managed(using=kwargs.get('using'))
+            return result
+    return _decorator
 
 
 def _insert_many(model, objects, using="default", skip_result=True):
@@ -59,6 +99,7 @@ def _insert_many(model, objects, using="default", skip_result=True):
     return []
 
 
+@transaction_management
 def insert_many(model, objects, using="default", skip_result=True):
     '''
     Bulk insert list of Django objects. Objects must be of the same
@@ -72,39 +113,49 @@ def insert_many(model, objects, using="default", skip_result=True):
     :param using: Database to use.
 
     '''
-    inserted_rows = _insert_many(model, objects, using, skip_result)
-    transaction.commit_unless_managed(using)
-    return inserted_rows
+
+    return _insert_many(model, objects, using, skip_result)
 
 
 def _update_many(model, objects, keys=None, using="default", skip_result=True,
-        update_fields=[]):
+                 update_fields=None):
 
     if not objects:
         return
+    update_fields = update_fields if update_fields is not None else []
 
     # If no keys specified, use the primary key by default
-    keys = keys or [model._meta.pk.name]
+    keys = keys if keys is not None else [model._meta.pk.name]
 
     con = connections[using]
 
     # Split the fields into the fields we want to update and the fields we want
     # to update by in the WHERE clause.
     key_fields = [f for f in model._meta.fields if f.name in keys]
-    value_fields = [f for f in _model_fields(model, update_fields) if f.name not in keys]
+    value_fields = [
+        field for field in _model_fields(model, update_fields)
+        if field.name not in keys
+    ]
 
     assert key_fields, "Empty key fields"
 
     # Combine the fields for the parameter list
     param_fields = value_fields + key_fields
-    parameters = [_prep_values(param_fields, o, con, False) for o in objects]
+    parameters = [
+        _prep_values(param_fields, o, con, False)
+        for o in objects
+    ]
 
     # Build the SQL
     table = model._meta.db_table
-    assignments = ",".join(("%s=%%s" % con.ops.quote_name(f.column))
-                           for f in value_fields)
-    where_keys = " AND ".join(("%s=%%s" % con.ops.quote_name(f.column))
-                              for f in key_fields)
+    assignments = ",".join(
+        ("%s=%%s" % con.ops.quote_name(f.column))
+        for f in value_fields
+    )
+    where_keys = " AND ".join(
+        ("%s=%%s" % con.ops.quote_name(f.column))
+        for f in key_fields
+    )
     sql = "UPDATE %s SET %s WHERE %s" % (table, assignments, where_keys)
     con.cursor().executemany(sql, parameters)
 
@@ -114,6 +165,7 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True,
     return []
 
 
+@transaction_management
 def update_many(model, objects, keys=None, using="default", update_fields=[]):
     '''
     Bulk update list of Django objects. Objects must be of the same
@@ -130,8 +182,8 @@ def update_many(model, objects, keys=None, using="default", update_fields=[]):
         of model are updated.
 
     '''
+
     _update_many(model, objects, keys, using, update_fields=update_fields)
-    transaction.commit_unless_managed(using)
 
 
 def _filter_objects(con, objects, key_fields):
@@ -147,8 +199,9 @@ def _filter_objects(con, objects, key_fields):
         yield o
 
 
+@transaction_management
 def insert_or_update_many(model, objects, keys=None, using="default",
-    skip_update=False, update_fields=[]):
+                          skip_update=False, update_fields=[]):
     '''
     Bulk insert or update a list of Django objects. This works by
     first selecting each object's keys from the database. If an
@@ -165,6 +218,7 @@ def insert_or_update_many(model, objects, keys=None, using="default",
         of model are updated.
 
     '''
+
     if not objects:
         return ([], [])
 
@@ -176,7 +230,11 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     key_fields = [f for f in model._meta.fields if f.name in keys]
     assert key_fields, "Empty key fields"
 
-    object_keys = [(o, _prep_values(key_fields, o, con, False)) for o in objects]
+    # Prepare field values before insert/update
+    object_keys = [
+        (o, _prep_values(key_fields, o, con, False))
+        for o in objects
+    ]
     parameters = [i for (_, k) in object_keys for i in k]
 
     table = model._meta.db_table
@@ -197,8 +255,13 @@ def insert_or_update_many(model, objects, keys=None, using="default",
         # Find the objects that need to be updated
         update_objects = [o for (o, k) in object_keys if k in existing]
 
-        updated_rows = _update_many(model, update_objects, keys=keys,
-            using=using, skip_result=False, update_fields=update_fields)
+        updated_rows = _update_many(
+            model, update_objects,
+            keys=keys,
+            using=using,
+            skip_result=False,
+            update_fields=update_fields
+        )
 
     # Find the objects that need to be inserted.
     insert_objects = [o for (o, k) in object_keys if k not in existing]
@@ -207,6 +270,6 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     filtered_objects = _filter_objects(con, insert_objects, key_fields)
 
     inserted_rows = _insert_many(model, filtered_objects, using=using,
-        skip_result=False)
-    transaction.commit_unless_managed(using)
+                                 skip_result=False)
+
     return (inserted_rows, updated_rows)
