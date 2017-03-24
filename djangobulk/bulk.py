@@ -10,11 +10,22 @@ from itertools import repeat
 from django.db import models, connections, transaction
 
 
-def _model_fields(model, field_names=[]):
+def _model_fields(model, field_names=None):
+    """Takes a model class and returns a list of fields that should be
+        inserted/updated.
+
+    :param model: A model class.
+    :param field_names: A list of field names that should be returned if they
+        match field in the model. If none all fields of the models that should
+        be update or inserted are returned.
+    :returns: A list of fields that should be updated/inserted.
+    """
     fields = []
+    field_names = field_names if field_names is not None else []
     for f in model._meta.fields:
-        if (isinstance(f, models.AutoField) or
-                (field_names and f.name not in field_names)):
+        is_autofield = isinstance(f, models.AutoField)
+        should_skip_field = field_names and f.name not in field_names
+        if is_autofield or should_skip_field:
             continue
         fields.append(f)
     return fields
@@ -107,33 +118,44 @@ def insert_many(model, objects, using="default", skip_result=True):
 
 
 def _update_many(model, objects, keys=None, using="default", skip_result=True,
-                 update_fields=[]):
+                 update_fields=None):
 
     if not objects:
         return
+    update_fields = update_fields if update_fields is not None else []
 
     # If no keys specified, use the primary key by default
-    keys = keys or [model._meta.pk.name]
+    keys = keys if keys is not None else [model._meta.pk.name]
 
     con = connections[using]
 
     # Split the fields into the fields we want to update and the fields we want
     # to update by in the WHERE clause.
     key_fields = [f for f in model._meta.fields if f.name in keys]
-    value_fields = [f for f in _model_fields(model, update_fields) if f.name not in keys]
+    value_fields = [
+        field for field in _model_fields(model, update_fields)
+        if field.name not in keys
+    ]
 
     assert key_fields, "Empty key fields"
 
     # Combine the fields for the parameter list
     param_fields = value_fields + key_fields
-    parameters = [_prep_values(param_fields, o, con, False) for o in objects]
+    parameters = [
+        _prep_values(param_fields, o, con, False)
+        for o in objects
+    ]
 
     # Build the SQL
     table = model._meta.db_table
-    assignments = ",".join(("%s=%%s" % con.ops.quote_name(f.column))
-                           for f in value_fields)
-    where_keys = " AND ".join(("%s=%%s" % con.ops.quote_name(f.column))
-                              for f in key_fields)
+    assignments = ",".join(
+        ("%s=%%s" % con.ops.quote_name(f.column))
+        for f in value_fields
+    )
+    where_keys = " AND ".join(
+        ("%s=%%s" % con.ops.quote_name(f.column))
+        for f in key_fields
+    )
     sql = "UPDATE %s SET %s WHERE %s" % (table, assignments, where_keys)
     con.cursor().executemany(sql, parameters)
 
@@ -208,7 +230,11 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     key_fields = [f for f in model._meta.fields if f.name in keys]
     assert key_fields, "Empty key fields"
 
-    object_keys = [(o, _prep_values(key_fields, o, con, False)) for o in objects]
+    # Prepare field values before insert/update
+    object_keys = [
+        (o, _prep_values(key_fields, o, con, False))
+        for o in objects
+    ]
     parameters = [i for (_, k) in object_keys for i in k]
 
     table = model._meta.db_table
@@ -230,7 +256,10 @@ def insert_or_update_many(model, objects, keys=None, using="default",
         update_objects = [o for (o, k) in object_keys if k in existing]
 
         updated_rows = _update_many(
-            model, update_objects, keys=keys, using=using, skip_result=False,
+            model, update_objects,
+            keys=keys,
+            using=using,
+            skip_result=False,
             update_fields=update_fields
         )
 
