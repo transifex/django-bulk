@@ -1,8 +1,8 @@
-from distutils.core import setup
+from setuptools import setup
 
 setup(
-    name='django-bulk',
-    version='0.1.2',
+    name='django-bulk-compat',
+    version='0.1',
     author='Kevin Mahoney',
     author_email='kevin.mahoney@maplecroft.com',
     packages=['djangobulk'],
