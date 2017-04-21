@@ -9,4 +9,5 @@ CACHES = {}
 CACHES['default'] = {}
 CACHES['default']['BACKEND'] = 'django.core.cache.backends.dummy.DummyCache'"
 
-echo "$db_settings" >> bulktest/test_settings.py
+cp bulktest/test_settings.py bulktest/test_settings_circle.py
+echo "$db_settings" >> bulktest/test_settings_circle.py

@@ -1,1 +1,2 @@
 *.pyc
+bulktest/test_settings_circle.py

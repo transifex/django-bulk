@@ -12,9 +12,11 @@ dependencies:
 
 test:
   pre:
-    - bash circle_setup.sh
+    - bash -x circle_setup.sh
   override:
-    - tox --recreate
+    - tox --recreate:
+          environment:
+              DJANGO_SETTINGS_MODULE: bulktest.test_settings_circle
 
 deployment:
   prod:
