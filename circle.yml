@@ -18,7 +18,7 @@ test:
 
 deployment:
   prod:
-      branch: master
+      branch: [master, devel]
       commands:
         - mkdir wheelhouse && pip wheel --wheel-dir=wheelhouse --no-deps .
         - pip install pip2pi
