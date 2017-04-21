@@ -1,3 +1,5 @@
+[![CircleCI](https://circleci.com/gh/transifex/django-bulk.svg?style=svg&circle-token=7427aaaaac537a6da210d3176245fa84827f645)](https://circleci.com/gh/transifex/django-bulk)
+
 # Django bulk insert/update
 
 Based on a [snippet](http://people.iola.dk/olau/python/bulkops.py) by Ole Laursen.
