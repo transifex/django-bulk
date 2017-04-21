@@ -20,6 +20,7 @@ deployment:
   prod:
       branch: [master, devel]
       commands:
+        - git reset --hard && git clean -f
         - mkdir wheelhouse && pip wheel --wheel-dir=wheelhouse --no-deps .
         - pip install pip2pi
         - dir2pi --normalize-package-names wheelhouse
