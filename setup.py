@@ -1,8 +1,11 @@
+import versioneer
+
 from setuptools import setup
 
 setup(
     name='django-bulk-compat',
-    version='0.1',
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     author='Kevin Mahoney',
     author_email='kevin.mahoney@maplecroft.com',
     packages=['djangobulk'],
