@@ -50,11 +50,12 @@ def _prep_values(fields, obj, con, add):
             # This is not an elegant solution and also relies on a big
             # assumption which may not be true (PostgreSQL always in UTC).
             if field_type == 'DateTimeField':
-                try:
-                    v = v.replace(tzinfo=None)
-                except TypeError:
-                    # DateTimeField with no tzinfo
-                    pass
+                if v is not None:
+                    try:
+                        v = v.replace(tzinfo=None)
+                    except TypeError:
+                        # DateTimeField with no tzinfo
+                        pass
             values.append(v)
         else:
             values.append(f.get_db_prep_save(f.pre_save(obj, add),
