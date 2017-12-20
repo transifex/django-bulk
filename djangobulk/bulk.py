@@ -79,6 +79,7 @@ def transaction_management(func):
             result = func(*args, **kwargs)
             transaction.commit_unless_managed(using=kwargs.get('using'))
             return result
+
     return _decorator
 
 
@@ -123,11 +124,11 @@ def insert_many(model, objects, using="default", skip_result=True):
 
 
 def _update_many(model, objects, keys=None, using="default", skip_result=True,
-                 update_fields=None):
-
+                 update_fields=None, exclude_fields=None):
     if not objects:
         return
     update_fields = update_fields if update_fields is not None else []
+    exclude_fields = exclude_fields if exclude_fields is not None else []
 
     # If no keys specified, use the primary key by default
     keys = keys if keys is not None else [model._meta.pk.name]
@@ -139,7 +140,7 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True,
     key_fields = [f for f in model._meta.fields if f.name in keys]
     value_fields = [
         field for field in _model_fields(model, update_fields)
-        if field.name not in keys
+        if field.name not in (keys + exclude_fields)
     ]
 
     assert key_fields, "Empty key fields"
@@ -171,7 +172,8 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True,
 
 
 @transaction_management
-def update_many(model, objects, keys=None, using="default", update_fields=[]):
+def update_many(model, objects, keys=None, using="default", update_fields=[],
+                exclude_fields=[]):
     '''
     Bulk update list of Django objects. Objects must be of the same
     Django model.
@@ -185,10 +187,13 @@ def update_many(model, objects, keys=None, using="default", update_fields=[]):
     :param using: Database to use.
     :param update_fields: A list of fields up be updated. If empty, all fields
         of model are updated.
+    :param exclude_fields: A list of fields up be excluded. If empty, no fields
+        of model are excluded.
 
     '''
 
-    _update_many(model, objects, keys, using, update_fields=update_fields)
+    _update_many(model, objects, keys, using, update_fields=update_fields,
+                 exclude_fields=exclude_fields)
 
 
 def _filter_objects(con, objects, key_fields):
@@ -206,7 +211,8 @@ def _filter_objects(con, objects, key_fields):
 
 @transaction_management
 def insert_or_update_many(model, objects, keys=None, using="default",
-                          skip_update=False, update_fields=[]):
+                          skip_update=False, update_fields=[],
+                          exlude_fields=[]):
     '''
     Bulk insert or update a list of Django objects. This works by
     first selecting each object's keys from the database. If an
@@ -221,6 +227,8 @@ def insert_or_update_many(model, objects, keys=None, using="default",
     :param skip_update: Flag to insert only non-existing objects.
     :param update_fields: A list of fields up be updated. If empty, all fields
         of model are updated.
+    :param exclude_fields: A list of fields up be excluded. If empty, no fields
+        of model are excluded.
 
     '''
 
@@ -265,7 +273,8 @@ def insert_or_update_many(model, objects, keys=None, using="default",
             keys=keys,
             using=using,
             skip_result=False,
-            update_fields=update_fields
+            update_fields=update_fields,
+            exclude_fields=exlude_fields
         )
 
     # Find the objects that need to be inserted.
