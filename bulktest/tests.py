@@ -174,6 +174,25 @@ class UpdateTest(TestCase):
         self.assertEqual(n.b, 2)
         self.assertEqual(n.c, 1)
 
+    def test_update_exlude_field(self):
+        """Exclude update b field"""
+        n = TestModelA(a="Test", b=1, c=1)
+        n.save()
+
+        n = TestModelA.objects.all()[0]
+        self.assertEqual(n.a, "Test")
+        self.assertEqual(n.b, 1)
+        self.assertEqual(n.c, 1)
+
+        n.b = 2
+        n.c = 2
+        update_many(TestModelA, [n], keys=['a'], exclude_fields=['b'])
+
+        n = TestModelA.objects.all()[0]
+        self.assertEqual(n.a, "Test")
+        self.assertEqual(n.b, 1)
+        self.assertEqual(n.c, 2)
+
 
 class InsertUpdateTest(TestCase):
     def test_basic_insert_update(self):
@@ -219,6 +238,29 @@ class InsertUpdateTest(TestCase):
         self.assertEqual(3, TestModelA.objects.get(a="Test1", b=1).c)
         self.assertEqual(3, TestModelA.objects.get(a="Test3", b=3).c)
 
+    def test_insert_update_exclude_field(self):
+        # Expected to fail in SQLite (no tuple comparison)
+        set1 = [
+            TestModelA(a="Test1", b=1, c=1),
+            TestModelA(a="Test2", b=2, c=2),
+            ]
+
+        insert_many(TestModelA, set1)
+        self.assertEqual(2, TestModelA.objects.all().count())
+
+        set2 = [
+            TestModelA(a="Test1", b=1, c=3),
+            TestModelA(a="Test2", b=3, c=4),
+            TestModelA(a="Test3", b=3, c=3),
+            ]
+
+        insert_or_update_many(TestModelA, set2, keys=['a'],
+                              exlude_fields=['c'])
+        self.assertEqual(3, TestModelA.objects.all().count())
+
+        self.assertEqual(1, TestModelA.objects.get(a="Test1", b=1).c)
+        self.assertEqual(2, TestModelA.objects.get(a="Test2", b=3).c)
+        self.assertEqual(3, TestModelA.objects.get(a="Test3", b=3).c)
 
     def test_multikey_insert_skip_update(self):
         # Expected to fail in SQLite (no tuple comparison)
