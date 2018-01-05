@@ -174,7 +174,7 @@ class UpdateTest(TestCase):
         self.assertEqual(n.b, 2)
         self.assertEqual(n.c, 1)
 
-    def test_update_exlude_field(self):
+    def test_update_exclude_field(self):
         """Exclude update b field"""
         n = TestModelA(a="Test", b=1, c=1)
         n.save()
@@ -255,7 +255,7 @@ class InsertUpdateTest(TestCase):
             ]
 
         insert_or_update_many(TestModelA, set2, keys=['a'],
-                              exlude_fields=['c'])
+                              exclude_fields=['c'])
         self.assertEqual(3, TestModelA.objects.all().count())
 
         self.assertEqual(1, TestModelA.objects.get(a="Test1", b=1).c)

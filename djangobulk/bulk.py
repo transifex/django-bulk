@@ -212,7 +212,7 @@ def _filter_objects(con, objects, key_fields):
 @transaction_management
 def insert_or_update_many(model, objects, keys=None, using="default",
                           skip_update=False, update_fields=[],
-                          exlude_fields=[]):
+                          exclude_fields=[]):
     '''
     Bulk insert or update a list of Django objects. This works by
     first selecting each object's keys from the database. If an
@@ -274,7 +274,7 @@ def insert_or_update_many(model, objects, keys=None, using="default",
             using=using,
             skip_result=False,
             update_fields=update_fields,
-            exclude_fields=exlude_fields
+            exclude_fields=exclude_fields
         )
 
     # Find the objects that need to be inserted.
