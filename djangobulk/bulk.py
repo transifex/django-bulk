@@ -10,18 +10,40 @@ from itertools import repeat
 from django.db import models, connections, transaction
 
 
+def _model_keys(model, field_names=None):
+    """Takes a model class and returns a list of fields that should be
+       used in a WHERE clause to an UPDATE.
+
+    :param model: A model class.
+    :param field_names: An iterable of field names that should be returned if
+        they match field in the model. If empty, no fields are returned.
+        If None the model's primary key is returned.
+    :returns: A list of fields that should be used in a WHERE
+    """
+    # If no fields are specified, use the primary key by default
+    if field_names is None:
+        return [model._meta.pk]
+    field_names = set(field_names)
+    fields = []
+    for f in model._meta.fields:
+        if field_names and f.name not in field_names:
+            continue
+        fields.append(f)
+    return fields
+
+
 def _model_fields(model, field_names=None):
     """Takes a model class and returns a list of fields that should be
         inserted/updated.
 
     :param model: A model class.
-    :param field_names: A list of field names that should be returned if they
-        match field in the model. If none all fields of the models that should
-        be update or inserted are returned.
+    :param field_names: An iterable of field names that should be returned if
+        they match field in the model. If None or empty all fields of the
+        models that should be update or inserted are returned.
     :returns: A list of fields that should be updated/inserted.
     """
     fields = []
-    field_names = field_names if field_names is not None else []
+    field_names = set(field_names or [])
     for f in model._meta.fields:
         is_autofield = isinstance(f, models.AutoField)
         should_skip_field = field_names and f.name not in field_names
@@ -29,6 +51,35 @@ def _model_fields(model, field_names=None):
             continue
         fields.append(f)
     return fields
+
+
+def _split_model_fields(model, keys=None, update_fields=None,
+                        exclude_fields=None):
+    """Separate model fields in key and value fields.
+
+    :param model: Django model class.
+    :param keys: An iterable of field names to update on. If none,
+        the model's primary key is returned.
+    :param update_fields: An iterable of field names up be updated. If none
+        or empty, all fields of the model are updated.
+    :param exclude_fields: An iterable of field names to be excluded from
+        the set of model fields to be updated.
+    :raises ValueError: if keys is not None and empty
+    """
+
+    key_fields = _model_keys(model, keys)
+    if not key_fields:
+        raise ValueError("Empty key fields")
+
+    # don't update the key fields
+    excluded_field_names = set(field.name for field in key_fields)
+    excluded_field_names.update(exclude_fields or [])
+
+    value_fields = [
+        field for field in _model_fields(model, update_fields)
+        if field.name not in excluded_field_names
+    ]
+    return (key_fields, value_fields)
 
 
 def _prep_values(fields, obj, con, add):
@@ -123,27 +174,23 @@ def insert_many(model, objects, using="default", skip_result=True):
     return _insert_many(model, objects, using, skip_result)
 
 
-def _update_many(model, objects, keys=None, using="default", skip_result=True,
-                 update_fields=None, exclude_fields=None):
+def _update_many(model, objects, key_fields, value_fields,
+                 using="default", skip_result=True):
+    """Bulk update list of Django objects.
+
+    Objects must be of the same Django model.
+
+    :param model: Django model class.
+    :param objects: List of objects of class `model`.
+    :param key_fields: A list of field names to use in the WHERE clause.
+    :param value_fields: A list of field names to update.
+    :param using: Database to use.
+    :param skip_result: don't return update rows. By default true.
+    """
     if not objects:
         return
-    update_fields = update_fields if update_fields is not None else []
-    exclude_fields = exclude_fields if exclude_fields is not None else []
-
-    # If no keys specified, use the primary key by default
-    keys = keys if keys is not None else [model._meta.pk.name]
 
     con = connections[using]
-
-    # Split the fields into the fields we want to update and the fields we want
-    # to update by in the WHERE clause.
-    key_fields = [f for f in model._meta.fields if f.name in keys]
-    value_fields = [
-        field for field in _model_fields(model, update_fields)
-        if field.name not in (keys + exclude_fields)
-    ]
-
-    assert key_fields, "Empty key fields"
 
     # Combine the fields for the parameter list
     param_fields = value_fields + key_fields
@@ -172,8 +219,8 @@ def _update_many(model, objects, keys=None, using="default", skip_result=True,
 
 
 @transaction_management
-def update_many(model, objects, keys=None, using="default", update_fields=[],
-                exclude_fields=[]):
+def update_many(model, objects, keys=None, using="default", update_fields=None,
+                exclude_fields=None):
     '''
     Bulk update list of Django objects. Objects must be of the same
     Django model.
@@ -183,17 +230,21 @@ def update_many(model, objects, keys=None, using="default", update_fields=[],
 
     :param model: Django model class.
     :param objects: List of objects of class `model`.
-    :param keys: A list of field names to update on.
+    :param keys: An iterable of field names to use in the WHERE clause on. If
+        none the model's primary key is used.
     :param using: Database to use.
-    :param update_fields: A list of fields up be updated. If empty, all fields
-        of model are updated.
-    :param exclude_fields: A list of fields up be excluded. If empty, no fields
-        of model are excluded.
-
+    :param update_fields: An iterable of field names up be updated. If none
+        or empty, all fields of the model are updated.
+    :param exclude_fields: An iterable of field names to be excluded from
+        the set of model fields to be updated.
+    :raises ValueError: if keys is not None and is empty.
     '''
 
-    _update_many(model, objects, keys, using, update_fields=update_fields,
-                 exclude_fields=exclude_fields)
+    key_fields, value_fields = _split_model_fields(
+        model, keys, update_fields, exclude_fields
+    )
+
+    _update_many(model, objects, key_fields, value_fields, using)
 
 
 def _filter_objects(con, objects, key_fields):
@@ -211,8 +262,8 @@ def _filter_objects(con, objects, key_fields):
 
 @transaction_management
 def insert_or_update_many(model, objects, keys=None, using="default",
-                          skip_update=False, update_fields=[],
-                          exclude_fields=[]):
+                          skip_update=False, update_fields=None,
+                          exclude_fields=None):
     '''
     Bulk insert or update a list of Django objects. This works by
     first selecting each object's keys from the database. If an
@@ -222,26 +273,28 @@ def insert_or_update_many(model, objects, keys=None, using="default",
 
     :param model: Django model class.
     :param objects: List of objects of class `model`.
-    :param keys: A list of field names to update on.
+    :param keys: An iterable of field names to use in the WHERE clause on. If
+        none the model's primary key is used.
     :param using: Database to use.
     :param skip_update: Flag to insert only non-existing objects.
-    :param update_fields: A list of fields up be updated. If empty, all fields
-        of model are updated.
-    :param exclude_fields: A list of fields up be excluded. If empty, no fields
-        of model are excluded.
-
+    :param update_fields: An iterable of field names to be updated. If none
+        or empty, all fields of the model are updated.
+    :param exclude_fields: An iterable of field names to be excluded from
+        the set of model fields to be updated.
+    :raises ValueError: if keys is not None and is empty.
     '''
 
     if not objects:
         return ([], [])
 
-    keys = keys or [model._meta.pk.name]
     con = connections[using]
 
     # Select key tuples from the database to find out which ones need to be
     # updated and which ones need to be inserted.
-    key_fields = [f for f in model._meta.fields if f.name in keys]
-    assert key_fields, "Empty key fields"
+
+    key_fields, value_fields = _split_model_fields(
+        model, keys, update_fields, exclude_fields
+    )
 
     # Prepare field values before insert/update
     object_keys = [
@@ -270,11 +323,10 @@ def insert_or_update_many(model, objects, keys=None, using="default",
 
         updated_rows = _update_many(
             model, update_objects,
-            keys=keys,
+            key_fields=key_fields,
+            value_fields=value_fields,
             using=using,
             skip_result=False,
-            update_fields=update_fields,
-            exclude_fields=exclude_fields
         )
 
     # Find the objects that need to be inserted.
